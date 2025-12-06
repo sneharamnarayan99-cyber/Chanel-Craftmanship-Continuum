@@ -33,6 +33,7 @@
       max-width:980px;
       margin:0 auto;
       padding:24px;
+      padding-bottom:120px; /* ensure fixed bottom nav won't cover page controls */
       display:flex;
       flex-direction:column;
       gap:18px;
@@ -167,6 +168,7 @@
       display:flex;
       justify-content:center;
       pointer-events:none;
+      z-index:60; /* keep above page but content has bottom padding so it won't hide controls */
     }
     .nav-shell{ width:100%; max-width:560px; padding:8px; pointer-events:auto; display:flex; gap:8px; align-items:center; background:var(--card); border-radius:999px; box-shadow:var(--shadow); }
     .nav-shell .nav-btn{ flex:1; padding:10px; border-radius:999px; display:flex; gap:8px; align-items:center; justify-content:center; background:transparent; border:0; cursor:pointer; }
@@ -237,13 +239,13 @@
 
     /* responsive */
     @media (max-width:840px){
-      .container{ padding:18px; }
+      .container{ padding:18px; padding-bottom:120px; }
       .header{ padding:12px; }
       .cardholder { max-width:100%; }
       .product-image { width:180px; height:130px; }
     }
     @media (max-width:640px){
-      .container{ padding:14px; }
+      .container{ padding:14px; padding-bottom:120px; }
       .header{ margin-bottom:12px; top:12px; }
       .certificate .row{ flex-direction:column; gap:6px; }
       .certificate .label{ width:auto; }
@@ -282,6 +284,9 @@
       </div>
 
       <div class="header-actions">
+        <!-- NEW: Scan button in header (visible when header is shown). Clicking always returns to landing (initial) -->
+        <button id="headerScan" class="btn btn-ghost" title="Back to scan landing">Scan</button>
+
         <div class="kicker">Powered by FeaturePrint</div>
         <button id="openProfile" class="btn btn-ghost focus-ring" title="Open profile" aria-controls="profileView">Profile</button>
       </div>
@@ -333,6 +338,7 @@
             <span>Scan Product Hardware</span>
           </button>
         </div>
+
       </div>
     </main>
 
@@ -789,6 +795,8 @@
       const navScan = document.getElementById('navScan');
       const navProfile = document.getElementById('navProfile');
 
+      const headerScanBtn = document.getElementById('headerScan');
+
       const downloadCertBtn = document.getElementById('downloadCertBtn');
       const printCertBtn = document.getElementById('printCertBtn');
       const closeCertBtn = document.getElementById('closeCertBtn');
@@ -820,6 +828,8 @@
       const digitalList = document.getElementById('digitalList');
       const productListEl = document.querySelector('.product-list');
 
+      const headerEl = document.querySelector('.header');
+
       // State
       let scanState = 'initial'; // initial | scanning | verified
       let activeTab = 'scan';
@@ -836,6 +846,16 @@
       }
       function showView(view){
         hideAllViews();
+
+        // Hide the header when on the landing (initialView), show it for other views
+        if (headerEl) {
+          if (view === initialView) {
+            headerEl.classList.add('hidden');
+          } else {
+            headerEl.classList.remove('hidden');
+          }
+        }
+
         view.classList.remove('hidden');
         view.removeAttribute('aria-hidden');
       }
@@ -846,13 +866,19 @@
       }
 
       function startScanSimulation(){
+        // Protect from double-start
+        if (scanState === 'scanning') return;
+
         // start scanning
         scanState = 'scanning';
         showView(scanningView);
         scanBtn.disabled = true;
         // simulate delay then go to verified
         scanTimer = setTimeout(() => {
+          scanTimer = null;
           scanState = 'verified';
+          // ensure selectedProduct is valid
+          if (selectedProduct < 0 || selectedProduct >= userProducts.length) selectedProduct = 0;
           showVerified();
         }, 2000);
       }
@@ -1092,6 +1118,7 @@
 
       // Event bindings
       scanBtn.addEventListener('click', ()=> {
+        // clicking visible scan button should start scanning
         if(scanState === 'scanning') return;
         startScanSimulation();
       });
@@ -1114,11 +1141,44 @@
         showView(initialView);
       });
 
+      // Header Scan button: always returns to landing (initial view) and focuses scan button
+      if (headerScanBtn) {
+        headerScanBtn.addEventListener('click', () => {
+          activeTab = 'scan';
+          updateNav();
+          showView(initialView);
+          // focus the scan button for quick access
+          setTimeout(()=> { if(scanBtn && typeof scanBtn.focus === 'function') scanBtn.focus(); }, 60);
+        });
+      }
+
+      // NAV: When tapping the bottom Scan icon:
+      // - If currently on the Profile (product) page, return to the landing page
+      // - Otherwise keep previous behavior (show scanning if in progress, verified if done, or start scan).
       navScan.addEventListener('click', ()=>{
+        // If user is on the Profile (product) page, return to the landing page
+        if (activeTab === 'profile') {
+          activeTab = 'scan';
+          updateNav();
+          showView(initialView);
+          // focus scan button for quick keyboard access
+          setTimeout(()=> { if(scanBtn && typeof scanBtn.focus === 'function') scanBtn.focus(); }, 60);
+          return;
+        }
+
+        // normal behavior for other contexts
         activeTab='scan';
         updateNav();
-        showView(initialView);
+        if(scanState === 'scanning'){
+          showView(scanningView);
+        } else if (scanState === 'verified'){
+          showView(verifiedView);
+        } else {
+          // user expects quick camera/scan start from the tab — start simulation
+          startScanSimulation();
+        }
       });
+
       navProfile.addEventListener('click', ()=>{
         activeTab='profile';
         updateNav();
